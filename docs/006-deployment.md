@@ -20,8 +20,8 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
 
 ## Prerequisites
 
-- Node.js 22.19+ or 24+, pnpm, git 2.32+, Python 3.8+ and tmux
-- GitHub CLI (`gh`) 2.48 or later. Source CLI fields must point to `gh` or `lark-cli` wrappers; the host relies on their subcommands and output formats.
+- Node.js 22.19+ or 24+, pnpm, git 2.32+, and Python 3.8+ with `psutil` (`python -m pip install psutil`)
+- GitHub CLI (`gh`) 2.48 or later, a program rather than a batch file. Source CLI fields must point to `gh` or `lark-cli` wrappers; the host relies on their subcommands and output formats.
 - A repository on github.com; GitHub Enterprise Server is not supported. To create a checkout per Ticket, keep a local clone from which the prepare command can add worktrees. Install `git-lfs` if that repository uses Git LFS.
 - A model provider configured for DeepSeek Harness. dsh-superagent uses the profile's default model unless the Eval or Execution settings name another.
 - For Feishu: `lark-cli` (tested with 1.0.90) and a Feishu or Lark app with a bot
@@ -46,6 +46,8 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
 
    Sign in as the agent account; the last command prints its login. dsh-superagent reads the login the same way.
 
+   On Windows, point the CLI field at `gh.exe` and sign that installation in as the agent account. dsh-superagent starts a CLI as a program, not through a command interpreter, because a batch file would give its arguments back as one string; for your own account, set `GH_CONFIG_DIR` in your shell instead of writing a wrapper.
+
 ### Feishu bot (optional)
 
 1. Create a self-built app with the bot capability. Grant it the permissions to receive message events, read and send chat messages, and read chat members, then publish the app version.
@@ -63,6 +65,8 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
    ```
 
    The first command reads the app secret from standard input. Use a separate configuration directory: `lark-cli` allows one profile per app id, and your personal configuration may already contain a user login for that app.
+
+   On Windows, `lark-cli` must name an `.exe` for the same reason; the `.cmd` that an npm install writes is not one, so Feishu stays unavailable there until a native build is installed.
 
    The host refuses a CLI that can act as a user. It reads the app id, Feishu/Lark brand and bot `open_id` from the bot configuration.
 
@@ -104,9 +108,11 @@ scripts/dsh-superagent start
 scripts/dsh-superagent status
 ```
 
-`start` runs `dsh --profile superagent` in tmux session `dsh-superagent`, or `dsh-<profile>` for another profile. It waits up to one minute for the runtime to become ready or report a setup requirement. On a first run it prints the missing setup information. It refuses duplicate instances, including ones started outside this script.
+On Windows the same names run `scripts\dsh-superagent.cmd`, so cmd.exe and PowerShell find it too. Either wrapper runs the Python supervisor with `DSH_SUPERAGENT_PYTHON` when set, then `python3`, then `python`; that interpreter needs `psutil`.
 
-`stop` and `restart` request graceful shutdown and wait up to five minutes for Executors. They never force-kill the process or touch other tmux sessions.
+`start` runs `dsh --profile superagent` as a detached process of its own, writing to a log file in `.artifacts/`, so the service outlives the terminal that started it on every platform, with or without tmux. It waits up to one minute for the runtime to become ready or report a setup requirement. On a first run it prints the missing setup information. It refuses duplicate instances, including ones started outside this script.
+
+`stop` and `restart` ask the service to shut down and wait up to five minutes for Executors. On Windows the request is a console event to the process group `start` created for the service; one started outside the script shares the operator's console, where that event would also reach the terminal, so it is not asked: after `--stop-timeout` it is terminated with the processes it started. Elsewhere a stop that times out leaves the process running, and the next check may try again.
 
 `status` prints process ids, health and setup problems. For a different profile or port, use `--profile` and `--url`, or set `DSH_SUPERAGENT_PROFILE` and `DSH_SUPERAGENT_URL`.
 

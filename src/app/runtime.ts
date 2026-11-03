@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-subprocess'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
 import { Engine, key, reasonText, type EngineForSettings, type ReceiveResult, type Ticket, type Trigger } from '../core/index.ts'
@@ -51,6 +51,21 @@ import { executorTools, type ExecutorToolsHost } from './tools/executor.ts'
 declare module '@deepseek-ai/cordis' { interface Context { orchestrator: SourceHost } }
 const now = (): string => new Date().toISOString()
 
+/** Removes a lock whose recorded owner no longer runs, which a stop that could not ask the service leaves on Windows. */
+function reclaimDeadLock(stateDir: string): void {
+  // The owner file sits beside the lock directory, which proper-lockfile removes with rmdir and must stay empty.
+  let owner: number
+  try { owner = Number(readFileSync(`${stateDir}.lock-owner`, 'utf8')) } catch { return }
+  if (!Number.isInteger(owner) || owner <= 0 || owner === process.pid) return
+  try { process.kill(owner, 0) } catch (error) {
+    // EPERM means the owner runs under another account, which keeps the lock; only a missing process frees it.
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+      rmSync(`${stateDir}.lock`, { recursive: true, force: true })
+      rmSync(`${stateDir}.lock-owner`, { force: true })
+    }
+  }
+}
+
 /**
  * Composition root of dsh-superagent that connects `Store`, `Setup`, `Engine`, `SourceRegistry`, `Effects`, `Outbox`, `Passes`, `Sessions`, `Settings`, `Prompts`, `DshExecutor`, and `MasterAssessor`.
  * Exposes the `SourceHost` service on the Cordis context for source plugins and coordinates startup, setup checks, HTTP route registration, and graceful shutdown.
@@ -87,11 +102,16 @@ export class Runtime extends Service implements SourceHost {
   constructor(ctx: Context, readonly machine: Machine, restart: () => void) {
     super(ctx, 'orchestrator')
     const runtime = this
-    // Lock the state directory before opening the database so another process cannot migrate or write concurrently.
+    // Lock the state directory before opening the database so another process cannot migrate or write concurrently. A
+    // Windows stop that had to terminate the service leaves the lock behind, so a lock whose recorded owner is gone is
+    // reclaimed first; `lockSync` has no retry of its own.
     mkdirSync(machine.stateDir, { recursive: true, mode: 0o700 })
+    reclaimDeadLock(machine.stateDir)
     const compromised = (error: Error) => { this.runtimeHealth.set({ state: 'error', detail: error.message }); this.stopped.abort() }
     const release = lockSync(machine.stateDir, { stale: 30_000, onCompromised: compromised })
-    this.releaseLock = async () => { release() }
+    const ownerFile = `${machine.stateDir}.lock-owner`
+    writeFileSync(ownerFile, String(process.pid))
+    this.releaseLock = async () => { rmSync(ownerFile, { force: true }); await release() }
     let opened: Store | undefined
     try {
       const report = (error: unknown) => { ctx.logger.warn('dsh-superagent: %s', String(error)) }

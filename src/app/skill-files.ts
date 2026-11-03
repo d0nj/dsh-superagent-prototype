@@ -1,12 +1,12 @@
 /** Loads packaged built-in skill definitions and prompt templates from disk. */
 import { readFileSync } from 'node:fs'
-import { packagePath } from '../infra/paths.ts'
+import { packagedPath } from '../infra/paths.ts'
 /**
  * Reads a packaged text file with normalized Unix line endings.
  * @throws Naming the file when it is missing or whitespace-only, because `dsh-superagent` cannot load without it.
  */
 function packaged(...parts: string[]): { path: string; text: string } {
-  const path = packagePath(...parts)
+  const path = packagedPath(...parts)
   let text: string
   try { text = readFileSync(path, 'utf8').replaceAll('\r\n', '\n') }
   catch (error) {

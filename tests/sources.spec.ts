@@ -1041,22 +1041,31 @@ describe('feishu event consumer', () => {
   })
   /**
    * A bot CLI whose `event consume` behaves as `mode` says: `never` gets ready, `warn` warns once ready, `ready` stays up,
-   * and `flaky` exits after its first ready. It records each run and the PID of the latest.
+   * and `flaky` exits after its first ready. It records each run and the PID of the latest. It is a Node program, started
+   * with the interpreter the suite runs under, so no platform has to run a script by its `#!` line.
    */
   function cli(mode: 'never' | 'warn' | 'ready' | 'flaky' | 'events' | 'late'): string {
-    const path = join(dir, 'lark-bot')
-    writeFileSync(path, `#!/bin/sh
-  [ "$1" = event ] || { echo '{"ok":true,"data":{}}'; exit 0; }
-  n=$(cat '${dir}/runs' 2>/dev/null || echo 0); n=$((n + 1)); echo $n > '${dir}/runs'; echo $$ > '${dir}/pid'
-  case ${mode} in
-    never) exec sleep 60 ;;
-    warn) echo '[event] ready' >&2; echo 'WARN the connection was reset' >&2; exec sleep 60 ;;
-    ready) echo '[event] ready' >&2; exec sleep 60 ;;
-    flaky) echo '[event] ready' >&2; [ "$n" -gt 1 ] && exec sleep 60; exit 1 ;;
-    events) echo '[event] ready' >&2; cat '${dir}/events'; touch '${dir}/printed'; exec sleep 60 ;;
-    late) echo '[event] ready' >&2; sleep 1; cat '${dir}/events'; touch '${dir}/printed'; exec sleep 60 ;;
-  esac
-  `, { mode: 0o755 })
+    const path = join(dir, 'lark-bot.js')
+    const runs = JSON.stringify(join(dir, 'runs')), printed = JSON.stringify(join(dir, 'printed')), events = JSON.stringify(join(dir, 'events'))
+    const ready = mode !== 'never'
+    const behaviour: Record<typeof mode, string> = {
+      never: '',
+      warn: "process.stderr.write('WARN the connection was reset\\n')",
+      ready: '',
+      flaky: 'if (run === 1) process.exit(1)',
+      events: `process.stdout.write(fs.readFileSync(${events})); fs.writeFileSync(${printed}, '')`,
+      late: `setTimeout(() => { process.stdout.write(fs.readFileSync(${events})); fs.writeFileSync(${printed}, '') }, 1000)`,
+    }
+    writeFileSync(path, `#!/usr/bin/env node
+const fs = require('fs')
+if (process.argv[2] !== 'event') { process.stdout.write('{"ok":true,"data":{}}\\n'); process.exit(0) }
+const run = fs.existsSync(${runs}) ? Number(fs.readFileSync(${runs}, 'utf8')) + 1 : 1
+fs.writeFileSync(${runs}, String(run))
+fs.writeFileSync(${JSON.stringify(join(dir, 'pid'))}, String(process.pid))
+${ready ? "process.stderr.write('[event] ready\\n')" : ''}
+${behaviour[mode]}
+setInterval(() => {}, 1000)
+`)
     return path
   }
   const runs = () => existsSync(join(dir, 'runs')) ? Number(readFileSync(join(dir, 'runs'), 'utf8')) : 0

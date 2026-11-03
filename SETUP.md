@@ -18,13 +18,15 @@ The setup follows [docs/000-philosophy.md](docs/000-philosophy.md): it takes as 
 Run from this checkout, once, and keep the result to yourself:
 
 ```sh
-node -v; pnpm -v; git --version; tmux -V; python3 --version; gh --version | head -1; dsh --version
+node -v; pnpm -v; git --version; python3 --version; python3 -c 'import psutil'; gh --version | head -1; dsh --version
 gh api user --jq .login
 command -v lark-cli
 grep -l -E 'id: dsh-superagent\b' "${DSH_HOME:-$HOME/.dsh}"/profiles/*/cordis.patch.yml 2>/dev/null
 ```
 
-- **Prerequisites:** Node.js 22.19+ or 24+, pnpm, git 2.32+, tmux, Python 3.8+, GitHub CLI 2.48+, and DSH within the `engines.dsh` range of `package.json`. A missing one becomes an item of the plan, not a question. DSH also needs a model provider; if the operator has never run DSH with a model, configuring one is an operator step.
+On Windows, `python` or `py -3` names the interpreter where `python3` does not; `scripts\dsh-superagent.cmd` uses the one that exists. The service script itself is the same on both.
+
+- **Prerequisites:** Node.js 22.19+ or 24+, pnpm, git 2.32+, Python 3.8+ with `psutil`, GitHub CLI 2.48+, and DSH within the `engines.dsh` range of `package.json`. A missing one becomes an item of the plan, not a question. DSH also needs a model provider; if the operator has never run DSH with a model, configuring one is an operator step.
 - **Operator login:** the `gh api user` result is the operator's own GitHub login, used as the recommendation in question 5.
 - **Existing profile:** a profile with a `dsh-superagent` entry is an earlier setup: ask whether to continue it, keep its configuration, and read Upgrade in `docs/006-deployment.md`.
 

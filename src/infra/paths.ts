@@ -1,6 +1,6 @@
 /** Resolves packaged asset paths from either the source tree or the compiled lib/ output. */
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 let cached: string | undefined
@@ -18,3 +18,9 @@ export function packageRoot(): string {
   throw new Error('dsh-superagent package root not found')
 }
 export const packagePath = (...parts: string[]): string => join(packageRoot(), ...parts)
+/**
+ * Returns the path of a packaged file that reads the same from the source tree and from the compiled output: a part
+ * that is absolute already names the file, which is how a file outside the package, such as a prompt in a test, is read.
+ */
+export const packagedPath = (...parts: string[]): string =>
+  parts.find(part => isAbsolute(part)) ?? packagePath(...parts)
